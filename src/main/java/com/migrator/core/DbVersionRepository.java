@@ -47,13 +47,18 @@ public class DbVersionRepository {
     public Set<String> getAppliedVersions() {
         Set<String> versions = new HashSet<>();
 
-        try (PreparedStatement stmt = connection.prepareStatement(
-                "SELECT version FROM schema_migrations"
-        )) {
-            ResultSet rs = stmt.executeQuery();
-            while (rs.next()) {
-                versions.add(rs.getString("version"));
+        try {
+            ensureSchemaMigrationsTable();
+
+            try (PreparedStatement stmt = connection.prepareStatement(
+                    "SELECT version FROM schema_migrations"
+            )) {
+                ResultSet rs = stmt.executeQuery();
+                while (rs.next()) {
+                    versions.add(rs.getString("version"));
+                }
             }
+
         } catch (SQLException e) {
             throw new RuntimeException("Failed to fetch applied migrations", e);
         }
@@ -79,6 +84,20 @@ public class DbVersionRepository {
             throw new RuntimeException(
                     "Failed to save migration record for version " + script.getVersion(), e
             );
+        }
+    }
+
+    private void ensureSchemaMigrationsTable() throws SQLException {
+        try (Statement stmt = connection.createStatement()) {
+            stmt.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                id SERIAL PRIMARY KEY,
+                version VARCHAR(50) NOT NULL UNIQUE,
+                description VARCHAR(255),
+                applied_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                checksum VARCHAR(255)
+            )
+        """);
         }
     }
 }
