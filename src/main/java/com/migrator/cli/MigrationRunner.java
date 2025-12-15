@@ -1,12 +1,16 @@
 package com.migrator.cli;
 
+import com.migrator.core.DatabaseConnector;
 import com.migrator.core.DbVersionRepository;
-import com.migrator.core.MigrationService;
+import com.migrator.core.impl.MigrationService;
 import com.migrator.core.ScriptExecutor;
-import com.migrator.core.ScriptLoader;
+import com.migrator.core.impl.ScriptLoader;
+import com.migrator.factory.DatabaseComponentFactory;
+import com.migrator.factory.DatabaseConnectorFactory;
+import com.migrator.model.DatabaseType;
+import com.migrator.model.DbConfig;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,6 +26,7 @@ import java.util.Map;
  *
  * Example usage:
  *   java -jar migrator-cli.jar \
+ *      --db.type=postgres
  *      --db.host=localhost \
  *      --db.port=5432 \
  *      --db.user=postgres \
@@ -36,46 +41,62 @@ public class MigrationRunner {
         System.out.println("Starting Database Migration Tool...");
 
         Map<String, String> params = parseArgs(args);
-
         validateParams(params);
 
-        String host = params.get("db.host");
-        String port = params.get("db.port");
-        String user = params.get("db.user");
-        String pass = params.get("db.pass");
-        String dbName = params.get("db.name");
+        // Database type
+        DatabaseType dbType = DatabaseType.from(params.get("db.type"));
+
+        // Build DbConfig (pure data)
+        DbConfig config = new DbConfig(
+                dbType,
+                params.get("db.host"),
+                Integer.parseInt(params.get("db.port")),
+                params.get("db.name"),
+                params.get("db.user"),
+                params.get("db.pass")
+        );
+
         String migrationDir = params.get("migrations");
 
-        String url = "jdbc:postgresql://" + host + ":" + port + "/" + dbName;
+        // Create DB connection via connector
+        DatabaseConnector connector =
+                DatabaseConnectorFactory.create(dbType);
 
-        System.out.println("Connecting to database: " + url);
+        try (Connection connection = connector.connect(config)) {
 
-        try (Connection connection = DriverManager.getConnection(url, user, pass)) {
+            System.out.println("Connected to database (" + dbType + ")");
 
+            // Core components
             ScriptLoader loader = new ScriptLoader(migrationDir);
-            DbVersionRepository repo = new DbVersionRepository(connection);
-            ScriptExecutor executor = new ScriptExecutor(connection);
 
-            MigrationService service = new MigrationService(loader, repo, executor);
+            DbVersionRepository repository =
+                    DatabaseComponentFactory.createRepository(dbType, connection);
+
+            ScriptExecutor executor =
+                    DatabaseComponentFactory.createExecutor(dbType, connection);
+
+            // Run migration
+            MigrationService service =
+                    new MigrationService(loader, repository, executor);
+
             service.migrate();
-
         }
 
         System.out.println("Migration completed successfully.");
     }
 
     // ---------------------------
-    // Helpers for argument parsing
+    // Argument parsing helpers
     // ---------------------------
 
     private static Map<String, String> parseArgs(String[] args) {
         Map<String, String> map = new HashMap<>();
 
         for (String arg : args) {
-            if (!arg.contains("=")) continue;
+            if (!arg.startsWith("--") || !arg.contains("=")) continue;
 
-            String[] parts = arg.split("=");
-            String key = parts[0].replace("--", "");
+            String[] parts = arg.split("=", 2);
+            String key = parts[0].substring(2);
             String value = parts[1];
 
             map.put(key, value);
@@ -84,13 +105,22 @@ public class MigrationRunner {
     }
 
     private static void validateParams(Map<String, String> params) {
+
         String[] required = {
-                "db.host", "db.port", "db.user", "db.pass", "db.name", "migrations"
+                "db.type",
+                "db.host",
+                "db.port",
+                "db.user",
+                "db.pass",
+                "db.name",
+                "migrations"
         };
 
         for (String key : required) {
             if (!params.containsKey(key)) {
-                throw new RuntimeException("Missing required argument: --" + key);
+                throw new RuntimeException(
+                        "Missing required argument: --" + key
+                );
             }
         }
     }

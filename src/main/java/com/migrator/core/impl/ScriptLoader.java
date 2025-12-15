@@ -1,4 +1,4 @@
-package com.migrator.core;
+package com.migrator.core.impl;
 
 import com.migrator.model.MigrationScript;
 import com.migrator.util.ChecksumUtil;
