@@ -27,6 +27,8 @@ public class MigrationService {
     private final ScriptLoader loader;
     private final DbVersionRepository repo;
     private final ScriptExecutor executor;
+    private static final int MAX_RETRIES = 3;
+
 
     public MigrationService(ScriptLoader loader,
                             DbVersionRepository repo,
@@ -68,22 +70,40 @@ public class MigrationService {
         System.out.println("Pending migrations: " + pending.size());
 
         for (MigrationScript script : pending) {
-            System.out.println(
-                    "➡ Applying migration " + script.getVersion() +
-                            " (" + script.getDescription() + ")..."
-            );
+            int attempt = 0;
+            while (attempt <= MAX_RETRIES) {
+                try {
+                    attempt++;
 
-            executor.execute(script);
+                    System.out.println(
+                            "➡ Applying migration " + script.getVersion() +
+                                    " (" + script.getDescription() + ")..."
+                    );
 
-            repo.save(script);
+                    executor.execute(script);
 
-            System.out.println("Migration applied successfully!");
+                    repo.save(script);
 
-            System.out.println("Applied migration count: " + applied.size());
-            System.out.println("Pending migration count: " +
-                    scripts.stream()
-                            .filter(s -> !applied.contains(s.getVersion()))
-                            .count());
+                    System.out.println("Migration applied successfully!");
+
+                    System.out.println("Applied migration count: " + applied.size());
+                    System.out.println("Pending migration count: " +
+                            scripts.stream()
+                                    .filter(s -> !applied.contains(s.getVersion()))
+                                    .count());
+                } catch (RuntimeException e) {
+                    if(attempt > MAX_RETRIES) {
+                        System.out.println(
+                                "Migration failed after " + MAX_RETRIES + " attempts."
+                        );
+                        throw e;
+                    }
+                    System.out.println(
+                            "Migration failed, retrying... Retry Count: " + attempt
+                    );
+                }
+            }
+
         }
 
         System.out.println("All pending migrations applied.");
