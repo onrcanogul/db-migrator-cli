@@ -18,7 +18,7 @@ jobs:
           distribution: temurin
 
       - name: Build CLI
-        run: mvn clean package -pl migrator-cli -am
+        run: mvn clean package
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
