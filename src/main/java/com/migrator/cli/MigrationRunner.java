@@ -2,11 +2,13 @@ package com.migrator.cli;
 
 import com.migrator.core.DatabaseConnector;
 import com.migrator.core.DbVersionRepository;
+import com.migrator.core.impl.MigrationLock;
 import com.migrator.core.impl.MigrationService;
 import com.migrator.core.ScriptExecutor;
 import com.migrator.core.impl.ScriptLoader;
 import com.migrator.factory.DatabaseComponentFactory;
 import com.migrator.factory.DatabaseConnectorFactory;
+import com.migrator.factory.MigrationLockFactory;
 import com.migrator.model.DatabaseType;
 import com.migrator.model.DbConfig;
 
@@ -62,8 +64,12 @@ public class MigrationRunner {
         DatabaseConnector connector =
                 DatabaseConnectorFactory.create(dbType);
 
-        try (Connection connection = connector.connect(config)) {
+        Connection connection = connector.connect(config);
 
+        MigrationLock lock = MigrationLockFactory.create(dbType.name(), connection);
+        System.out.println("Acquiring migration lock...");
+        lock.acquire();
+        try {
             System.out.println("Connected to database (" + dbType + ")");
 
             // Core components
@@ -80,6 +86,10 @@ public class MigrationRunner {
                     new MigrationService(loader, repository, executor);
 
             service.migrate();
+        }
+        finally {
+            System.out.println("Releasing migration lock...");
+            lock.release();
         }
 
         System.out.println("Migration completed successfully.");
