@@ -85,7 +85,7 @@ public class MigrationRunner {
             MigrationService service =
                     new MigrationService(loader, repository, executor);
 
-            service.migrate();
+            service.migrate(connection);
         }
         finally {
             System.out.println("Releasing migration lock...");

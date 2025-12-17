@@ -85,7 +85,7 @@ java -jar db-migrator-1.0.0-shaded.jar \
   --db.pass=$DB_PASS \
   --migrations=./migrations
 ```
-
+---
 ## Locking Behavior in CI/CD
 
 When a migration starts:
@@ -129,7 +129,8 @@ This ensures:
 - no silent failures
 - no corrupted migration state
 
-### Best Practices
+---
+## Best Practices
 
 - Run migrations before application startup
 - Use one migration directory per database

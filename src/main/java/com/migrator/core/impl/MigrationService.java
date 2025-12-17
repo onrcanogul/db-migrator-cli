@@ -4,6 +4,7 @@ import com.migrator.core.DbVersionRepository;
 import com.migrator.core.ScriptExecutor;
 import com.migrator.model.MigrationScript;
 
+import java.sql.Connection;
 import java.util.List;
 import java.util.Set;
 
@@ -27,7 +28,7 @@ import java.util.Set;
 public class MigrationService {
 
     private final ScriptLoader loader;
-    private final DbVersionRepository repo;
+    private final DbVersionRepository repository;
     private final ScriptExecutor executor;
     private static final int MAX_RETRIES = 3;
 
@@ -36,7 +37,7 @@ public class MigrationService {
                             DbVersionRepository repo,
                             ScriptExecutor executor) {
         this.loader = loader;
-        this.repo = repo;
+        this.repository = repo;
         this.executor = executor;
     }
 
@@ -52,12 +53,12 @@ public class MigrationService {
      *
      * @throws Exception if any migration fails
      */
-    public void migrate() throws Exception {
+    public void migrate(Connection connection) throws Exception {
 
         System.out.println("Loading migration scripts...");
         List<MigrationScript> scripts = loader.loadScripts();
 
-        Set<String> applied = repo.getAppliedVersions();
+        Set<String> applied = repository.getAppliedVersions();
 
         List<MigrationScript> pending = scripts.stream()
                 .filter(s -> !applied.contains(s.getVersion()))
@@ -70,9 +71,18 @@ public class MigrationService {
                             " (" + script.getDescription() + ")..."
             );
 
-            executor.executeWithRetry(script, MAX_RETRIES);
+            connection.setAutoCommit(false);
 
-            repo.save(script); // 🔒 ONLY ONCE
+            try {
+                executor.executeWithRetry(script, MAX_RETRIES);
+                repository.save(script);
+                connection.commit();
+            } catch (Exception e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(true);
+            }
 
             System.out.println("Migration applied successfully!");
         }
