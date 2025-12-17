@@ -24,7 +24,7 @@ public class MssqlDbVersionRepository implements DbVersionRepository {
         Set<String> versions = new HashSet<>();
 
         try {
-            ensureSchemaMigrationsTable();
+            ensureMigrationInfrastructure();
 
             try (PreparedStatement stmt = connection.prepareStatement(
                     "SELECT version FROM schema_migrations"
@@ -66,28 +66,44 @@ public class MssqlDbVersionRepository implements DbVersionRepository {
     /**
      * Creates schema_migrations table if it does not exist (MSSQL compatible).
      */
-    private void ensureSchemaMigrationsTable() throws SQLException {
+    private void ensureMigrationInfrastructure() throws SQLException {
 
         String sql = """
-            IF NOT EXISTS (
-                SELECT * FROM sysobjects
-                WHERE name = 'schema_migrations'
-                  AND xtype = 'U'
-            )
-            BEGIN
-                CREATE TABLE schema_migrations (
-                    id INT IDENTITY(1,1) PRIMARY KEY,
-                    version NVARCHAR(50) NOT NULL UNIQUE,
-                    description NVARCHAR(255),
-                    applied_at DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
-                    checksum NVARCHAR(255)
-                )
-            END
+        /* 1. schema_migrations table */
+        IF OBJECT_ID('dbo.schema_migrations', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.schema_migrations (
+                id INT IDENTITY(1,1) PRIMARY KEY,
+                version NVARCHAR(50) NOT NULL UNIQUE,
+                description NVARCHAR(255),
+                applied_at DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+                checksum NVARCHAR(255)
+            );
+        END;
+
+        /* 2. schema_migration_lock table */
+        IF OBJECT_ID('dbo.schema_migration_lock', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.schema_migration_lock (
+                id INT PRIMARY KEY,
+                locked_at DATETIME2
+            );
+        END;
+
+        /* 3. ensure single lock row */
+        IF NOT EXISTS (
+            SELECT 1 FROM dbo.schema_migration_lock WHERE id = 1
+        )
+        BEGIN
+            INSERT INTO dbo.schema_migration_lock (id, locked_at)
+            VALUES (1, SYSDATETIME());
+        END;
         """;
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(sql);
         }
     }
+
 }
 

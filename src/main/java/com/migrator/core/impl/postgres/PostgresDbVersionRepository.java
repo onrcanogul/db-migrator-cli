@@ -26,7 +26,7 @@ public class PostgresDbVersionRepository implements DbVersionRepository {
         Set<String> versions = new HashSet<>();
 
         try {
-            ensureSchemaMigrationsTable();
+            ensureMigrationInfrastructure();
 
             try (PreparedStatement stmt = connection.prepareStatement(
                     "SELECT version FROM schema_migrations"
@@ -65,8 +65,11 @@ public class PostgresDbVersionRepository implements DbVersionRepository {
         }
     }
 
-    private void ensureSchemaMigrationsTable() throws SQLException {
+    private void ensureMigrationInfrastructure() throws SQLException {
+
         try (Statement stmt = connection.createStatement()) {
+
+            // 1. schema_migrations table
             stmt.execute("""
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 id SERIAL PRIMARY KEY,
@@ -76,6 +79,24 @@ public class PostgresDbVersionRepository implements DbVersionRepository {
                 checksum VARCHAR(255)
             )
         """);
+
+            // 2. schema_migration_lock table
+            stmt.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migration_lock (
+                id INT PRIMARY KEY,
+                locked_at TIMESTAMP
+            )
+        """);
+        }
+
+        // 3. ensure single lock row
+        try (PreparedStatement ps = connection.prepareStatement("""
+        INSERT INTO schema_migration_lock (id, locked_at)
+        VALUES (1, NOW())
+        ON CONFLICT (id) DO NOTHING
+    """)) {
+            ps.executeUpdate();
         }
     }
+
 }
